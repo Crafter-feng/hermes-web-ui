@@ -2353,6 +2353,9 @@ class BridgeServer:
                 return {"error": "config.yaml not found", "ok": False}
 
             mcp_servers = cfg.setdefault("mcp_servers", {})
+            if not isinstance(mcp_servers, dict):
+                mcp_servers = {}
+                cfg["mcp_servers"] = mcp_servers
             mcp_servers[name] = config
 
             self._save_mcp_config(cfg, profile)
@@ -2371,14 +2374,13 @@ class BridgeServer:
                 return {"error": "config.yaml not found", "ok": False}
 
             mcp_servers = cfg.setdefault("mcp_servers", {})
+            if not isinstance(mcp_servers, dict):
+                mcp_servers = {}
+                cfg["mcp_servers"] = mcp_servers
             if name not in mcp_servers:
                 return {"error": f"server '{name}' not found in config", "ok": False}
 
-            existing = mcp_servers[name]
-            if isinstance(existing, dict) and "transport" not in config:
-                existing.update(config)
-            else:
-                mcp_servers[name] = config
+            mcp_servers[name] = config
 
             self._save_mcp_config(cfg, profile)
 

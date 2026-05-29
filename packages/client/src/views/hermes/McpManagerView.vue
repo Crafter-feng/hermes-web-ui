@@ -3,9 +3,10 @@ import { computed, onUnmounted, ref } from 'vue'
 import yaml from 'js-yaml'
 import {
   NAlert, NButton, NEmpty, NInput, NModal,
-  NSpin, NSwitch, NTag, NPopconfirm, NPopover, NSpace, NRadioGroup, NRadioButton, useMessage,
+  NSpin, NRadioGroup, NRadioButton, useMessage,
 } from 'naive-ui'
 import { useI18n } from 'vue-i18n'
+import McpServerCard from '@/components/hermes/mcp/McpServerCard.vue'
 import {
   fetchMcpServers, fetchMcpTools, mcpServerAdd, mcpServerRemove,
   mcpServerUpdate, mcpServerTest, mcpReload,
@@ -192,6 +193,12 @@ async function loadServers() {
   try {
     const data = await fetchMcpServers()
     servers.value = data.servers ?? []
+    // Auto-load tools for all connected servers
+    for (const s of servers.value) {
+      if (s.connected && s.tools > 0 && !toolsByServer.value[s.name]) {
+        showTools(s)
+      }
+    }
   } catch (err: any) {
     error.value = err?.message || t('mcp.loadFailed')
   } finally {
@@ -371,18 +378,6 @@ async function showTools(server: McpServerInfo) {
   }
 }
 
-function statusType(server: McpServerInfo): 'success' | 'error' | 'warning' {
-  if (server.connected) return 'success'
-  if (server.error) return 'error'
-  return 'warning'
-}
-
-function statusLabel(server: McpServerInfo): string {
-  if (server.connected) return t('mcp.connected')
-  if (server.error) return t('mcp.error')
-  return t('mcp.disconnected')
-}
-
 void loadServers()
 </script>
 
@@ -390,14 +385,11 @@ void loadServers()
   <div class="mcp-view">
     <header class="page-header">
       <h2 class="header-title">{{ t('mcp.title') }}</h2>
-      <NSpace>
-        <NButton size="small" secondary @click="handleReload()">
-          {{ t('mcp.reloadAll') }}
-        </NButton>
+      <div class="header-actions">
         <NButton size="small" quaternary :loading="loading" @click="loadServers">
           {{ t('mcp.refresh') }}
         </NButton>
-      </NSpace>
+      </div>
     </header>
 
     <div class="mcp-content">
@@ -432,89 +424,37 @@ void loadServers()
           size="small"
           class="search-input"
         />
-        <NButton type="primary" size="small" @click="openAddModal">
-          {{ t('mcp.addServer') }}
-        </NButton>
+        <div class="btn-group">
+          <NButton size="small" type="primary" @click="handleReload()">
+            {{ t('mcp.reloadAll') }}
+          </NButton>
+          <NButton type="primary" size="small" @click="openAddModal">
+            {{ t('mcp.addServer') }}
+          </NButton>
+        </div>
       </div>
 
       <NSpin :show="loading && servers.length === 0">
-        <div v-if="filteredServers.length" class="table-wrap">
-          <table class="mcp-table" :aria-label="t('mcp.title')">
-            <thead>
-              <tr>
-                <th scope="col">{{ t('mcp.tableName') }}</th>
-                <th scope="col">{{ t('mcp.tableTransport') }}</th>
-                <th scope="col">{{ t('mcp.tableStatus') }}</th>
-                <th scope="col">{{ t('mcp.tableEnabled') }}</th>
-                <th scope="col">{{ t('mcp.tableTools') }}</th>
-                <th scope="col">{{ t('mcp.tableActions') }}</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="server in filteredServers" :key="server.name">
-                <td>
-                  <strong>{{ server.name }}</strong>
-                  <div v-if="server.error" class="error-detail">{{ server.error }}</div>
-                </td>
-                <td>
-                  <NTag size="small" round>{{ server.transport }}</NTag>
-                </td>
-                <td>
-                  <NTag size="small" :type="statusType(server)">{{ statusLabel(server) }}</NTag>
-                </td>
-                <td>
-                  <NSwitch
-                    :value="server.enabled !== false"
-                    size="small"
-                    @update:value="() => handleToggleEnabled(server)"
-                  />
-                </td>
-                <td>
-                  <NPopover
-                    v-if="server.tools > 0"
-                    trigger="hover"
-                    class="tool-popover"
-                    @update:show="(v: boolean) => v && showTools(server)"
-                  >
-                    <template #trigger>
-                      <span v-if="server.tools_registered < server.tools" class="tools-link">
-                        {{ t('mcp.toolsFiltered', { registered: server.tools_registered, total: server.tools }) }}
-                      </span>
-                      <span v-else class="tools-link">{{ t('mcp.toolsCount', { count: server.tools }) }}</span>
-                    </template>
-                    <div v-if="loadingTools === server.name" class="tool-popover-loading">{{ t('mcp.loading') }}</div>
-                    <div v-else-if="toolsByServer[server.name]?.length" class="tool-list">
-                      <div v-for="tool in toolsByServer[server.name]" :key="tool.name" class="tool-item">
-                        <div class="tool-name">{{ tool.name }}</div>
-                        <div v-if="tool.description" class="tool-desc">{{ tool.description }}</div>
-                      </div>
-                    </div>
-                    <div v-else class="tool-popover-loading">{{ t('mcp.noTools') }}</div>
-                  </NPopover>
-                  <span v-else class="muted">{{ t('mcp.zeroTools') }}</span>
-                </td>
-                <td>
-                  <NSpace>
-                    <NButton size="tiny" secondary @click="openEditModal(server)">{{ t('mcp.edit') }}</NButton>
-                    <NButton size="tiny" secondary @click="handleTest(server)">{{ t('mcp.test') }}</NButton>
-                    <NButton size="tiny" secondary @click="handleReload(server.name)">{{ t('mcp.reload') }}</NButton>
-                    <NPopconfirm @positive-click="handleRemove(server)">
-                      <template #trigger>
-                        <NButton size="tiny" secondary type="error">{{ t('mcp.remove') }}</NButton>
-                      </template>
-                      {{ t('mcp.confirmRemove', { name: server.name }) }}
-                    </NPopconfirm>
-                  </NSpace>
-                </td>
-              </tr>
-            </tbody>
-          </table>
+        <div v-if="filteredServers.length" class="servers-grid">
+          <McpServerCard
+            v-for="server in filteredServers"
+            :key="server.name"
+            :server="server"
+            :tools-by-server="toolsByServer"
+            :loading-tools="loadingTools"
+            @edit="openEditModal"
+            @test="handleTest"
+            @reload="handleReload"
+            @remove="handleRemove"
+            @toggle-enabled="handleToggleEnabled"
+            @show-tools="showTools"
+          />
         </div>
         <NEmpty v-else-if="!loading" :description="t('mcp.empty')" />
       </NSpin>
     </div>
 
-    <NModal v-model:show="showModal" :title="modalMode === 'add' ? t('mcp.addTitle') : t('mcp.editTitle')" preset="card" class="modal-card">
+    <NModal v-model:show="showModal" :title="modalMode === 'add' ? t('mcp.addTitle') : t('mcp.editTitle')" preset="card" :style="{ width: 'min(520px, calc(100vw - 32px))' }">
       <div class="mode-switch-row">
         <NRadioGroup v-model:value="inputMode" size="small" @update:value="handleModeChange">
           <NRadioButton value="json">JSON</NRadioButton>
@@ -556,13 +496,34 @@ void loadServers()
   padding: 20px;
 }
 
+.page-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid $border-color;
+}
+
+.header-title {
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 80px;
+  justify-content: flex-end;
+}
+
 .mcp-notice {
   margin-bottom: 14px;
 }
 
 .summary-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(120px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
   gap: 12px;
   margin-bottom: 16px;
 }
@@ -596,77 +557,34 @@ void loadServers()
 
 .toolbar-row {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 10px;
   margin-bottom: 16px;
 
   .search-input {
     flex: 1;
+    min-width: 0;
     max-width: 360px;
   }
 }
 
-.table-wrap {
-  overflow-x: auto;
-  border: 1px solid $border-color;
-  border-radius: 12px;
-  background: $bg-secondary;
-}
+.btn-group {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 1;
+  min-width: 0;
 
-.mcp-table {
-  width: 100%;
-  border-collapse: collapse;
-  min-width: 640px;
-
-  th, td {
-    padding: 12px;
-    border-bottom: 1px solid $border-color;
-    text-align: left;
-    vertical-align: top;
-    font-size: 13px;
-  }
-
-  th {
-    color: $text-muted;
-    font-size: 11px;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    background: rgba(var(--accent-primary-rgb), 0.04);
-  }
-
-  tr:last-child td {
-    border-bottom: none;
+  .n-button {
+    flex: 1;
+    white-space: nowrap;
   }
 }
 
-.error-detail {
-  margin-top: 4px;
-  color: $error;
-  font-size: 11px;
-  max-width: 300px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.tools-link {
-  cursor: pointer;
-  color: $accent-primary;
-  text-decoration: underline;
-  text-decoration-style: dotted;
-
-  &:hover {
-    text-decoration-style: solid;
-  }
-}
-
-.muted {
-  color: var(--n-text-color-3);
-  font-size: 12px;
-}
-
-.modal-card {
-  width: 580px;
+.servers-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 420px), 1fr));
+  gap: 14px;
 }
 
 .mode-switch-row {
@@ -692,44 +610,27 @@ void loadServers()
   justify-content: flex-end;
   margin-top: 16px;
 }
-</style>
 
-<style lang="scss">
-/* Popover styles — must be unscoped because NPopover teleports to <body> */
-.mcp-view .tool-popover {
-  max-width: 400px;
-}
-
-.mcp-view .tool-list {
-  max-height: 200px;
-  overflow-y: auto;
-}
-
-.mcp-view .tool-item {
-  font-size: 12px;
-  padding: 3px 0;
-  border-bottom: 1px solid rgba(var(--text-muted-rgb, 128,128,128), 0.15);
-
-  &:last-child { border-bottom: none; }
-
-  .tool-name {
-    font-weight: 500;
-    color: var(--n-text-color);
+@media (max-width: $breakpoint-mobile) {
+  .summary-grid {
+    grid-template-columns: repeat(2, 1fr);
   }
 
-  .tool-desc {
-    font-size: 11px;
-    color: var(--n-text-color-3);
-    margin-top: 2px;
-    line-height: 1.4;
-    white-space: normal;
-    word-break: break-word;
-  }
-}
+  .toolbar-row {
+    flex-direction: column;
+    align-items: stretch;
 
-.mcp-view .tool-popover-loading {
-  font-size: 12px;
-  color: var(--n-text-color-3);
-  padding: 4px 0;
+    .search-input {
+      max-width: none;
+    }
+
+    .btn-group {
+      width: 100%;
+    }
+  }
+
+  .servers-grid {
+    grid-template-columns: 1fr;
+  }
 }
 </style>
